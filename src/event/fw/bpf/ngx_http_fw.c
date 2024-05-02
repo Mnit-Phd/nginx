@@ -1,8 +1,11 @@
+#include <linux/types.h>
 #include <errno.h>
 #include <linux/string.h>
 #include <linux/udp.h>
 #include <linux/bpf.h>
-
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+#include <bcc/proto.h>
 #include <bpf/bpf_helpers.h>
 
 
@@ -39,9 +42,15 @@ do {                                                                          \
 #define IP_TCP 	6
 #define ETH_HLEN 14
 
+#define IP_SRC_OFF (ETH_HLEN + offsetof(struct iphdr, saddr))
+#define IP_DST_OFF (ETH_HLEN + offsetof(struct iphdr, daddr))
+
+#define cursor_advance(_cursor, _len) \
+        ({ void *_tmp = _cursor; _cursor += _len; _tmp; })
+
 struct Key {
-	u32 src_ip;               //source ip
-	u32 dst_ip;               //destination ip
+	__u32 src_ip;               //source ip
+	__u32 dst_ip;               //destination ip
 	unsigned short src_port;  //source port
 	unsigned short dst_port;  //destination port
 };
@@ -50,18 +59,16 @@ struct Leaf {
 	int timestamp;            //timestamp in ns
 };
 
-struct response_403 {
-  char buf[ARRAYSIZE];
-};
-
+#define bpf_memcpy __builtin_memcpy
 #define ARRAYSIZE 512 // size of 403 response
 
-BPF_ARRAY(lookupTable, struct response_403, ARRAYSIZE);
+//char buf[ARRAYSIZE];
+//BPF_ARRAY(lookupTable, char, ARRAYSIZE);
 
 //BPF_TABLE(map_type, key_type, leaf_type, table_name, num_entry)
 //map <Key, Leaf>
 //tracing sessions having same Key(dst_ip, src_ip, dst_port,src_port)
-BPF_HASH(sessions, struct Key, struct Leaf, 1024);
+//BPF_HASH(sessions, struct Key, struct Leaf, 1024);
 
 char _license[] SEC("license") = LICENSE;
 
@@ -82,7 +89,7 @@ char _license[] SEC("license") = LICENSE;
 //  */
 // struct bpf_map_def SEC("maps") ngx_quic_sockmap;
 
-void swap_mac(struct __sk_buff *skb, struct ethhdr  *eth)
+void swap_mac(struct __sk_buff *skb, struct ethhdr *eth)
 {
 	/* Let's grab the MAC address.
 	 * We need to copy them out, as they are 48 bits long */
@@ -96,7 +103,7 @@ void swap_mac(struct __sk_buff *skb, struct ethhdr  *eth)
 	bpf_skb_store_bytes(skb, offsetof(struct ethhdr, h_dest), src_mac, ETH_ALEN, 0);
 }
 
-void swap_ip(struct iphdr   *ip, struct __sk_buff *skb)
+void swap_ip(struct iphdr *ip, struct __sk_buff *skb)
 {
 	/* Let's grab the IP addresses.
 	 * They are 32-bit, so it is easy to access */
@@ -114,7 +121,7 @@ void swap_ip(struct iphdr   *ip, struct __sk_buff *skb)
 SEC(PROGNAME)
 int filter_http_packets(struct __sk_buff *skb)
 {
-    u8 *cursor = 0;
+    __u8 *cursor = 0;
 
 	struct ethernet_t *ethernet = cursor_advance(cursor, sizeof(*ethernet));
 	//filter IP packets (ethernet type = 0x0800)
@@ -133,10 +140,10 @@ int filter_http_packets(struct __sk_buff *skb)
 //										 | http-header | http payload|
 
 // 10k, 5k, 5k(block)[2.5k->GET block ->success, 403(2.5k)]
-	u32  tcp_header_length = 0;
-	u32  ip_header_length = 0;
-	u32  payload_offset = 0;
-	u32  payload_length = 0;
+	__u32  tcp_header_length = 0;
+	__u32  ip_header_length = 0;
+	__u32  payload_offset = 0;
+	__u32  payload_length = 0;
 	struct Key 	key;
 	struct Leaf zero = {0};
 
@@ -197,7 +204,7 @@ int filter_http_packets(struct __sk_buff *skb)
 	}
 	else
 	{
-		goto DROP
+		goto DROP;
 	}
 
 	//no HTTP match
