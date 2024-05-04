@@ -1,12 +1,11 @@
-#include <linux/types.h>
-#include <errno.h>
 #include <linux/string.h>
 #include <linux/udp.h>
 #include <linux/bpf.h>
-#include <linux/if_ether.h>
+// #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <bcc/proto.h>
 #include <bpf/bpf_helpers.h>
+// #include <bcc/compat/linux/bpf.h>
 
 
 #if !defined(SEC)
@@ -62,13 +61,13 @@ struct Leaf {
 #define bpf_memcpy __builtin_memcpy
 #define ARRAYSIZE 512 // size of 403 response
 
-//char buf[ARRAYSIZE];
-//BPF_ARRAY(lookupTable, char, ARRAYSIZE);
+char buf[ARRAYSIZE];
+// BPF_ARRAY(lookupTable, char, ARRAYSIZE);
 
 //BPF_TABLE(map_type, key_type, leaf_type, table_name, num_entry)
 //map <Key, Leaf>
 //tracing sessions having same Key(dst_ip, src_ip, dst_port,src_port)
-//BPF_HASH(sessions, struct Key, struct Leaf, 1024);
+// BPF_HASH(sessions, struct Key, struct Leaf, 1024);
 
 char _license[] SEC("license") = LICENSE;
 
@@ -200,26 +199,26 @@ int filter_http_packets(struct __sk_buff *skb)
 	//GET /block*
 	if (bpf_strncmp(p, 10, "GET /block"))
 	{
-		goto HTTP_MATCH;
+		goto KEEP;
 	}
 	else
 	{
 		goto DROP;
 	}
 
-	//no HTTP match
-	//check if packet belong to an HTTP session
-	struct Leaf * lookup_leaf = sessions.lookup(&key);
-	if(lookup_leaf) {
-		//send packet to userspace
-		goto KEEP;
-	}
-	goto DROP;
+	// //no HTTP match
+	// //check if packet belong to an HTTP session
+	// struct Leaf * lookup_leaf = sessions.lookup(&key);
+	// if(lookup_leaf) {
+	// 	//send packet to userspace
+	// 	goto KEEP;
+	// }
+	// goto DROP;
 
 	//keep the packet and send it to userspace returning -1
-	HTTP_MATCH:
+	// HTTP_MATCH:
 		//if not already present, insert into map <Key, Leaf>
-		sessions.lookup_or_try_init(&key, &zero);
+		// sessions.lookup_or_try_init(&key, &zero);
 
 	//send packet to userspace returning -1
 	KEEP:
@@ -228,19 +227,19 @@ int filter_http_packets(struct __sk_buff *skb)
 	//drop the packet returning 0
 	// Generate 403 forbidden here and send back the response
 	DROP:
-		__u32 key = 0;
-		struct response_403 *response = bpf_map_lookup_elem(&lookupTable, &key);
-		if (response != NULL)
+		// __u32 key = 0;
+		// struct response_403 *response = bpf_map_lookup_elem(&lookupTable, &key);
+		if (buf != NULL)
 		{
 			// swap mac
-			swap_mac(skb, ethernet)
+			swap_mac(skb, ethernet);
 			// swap IP
-			swap_ip(ip, skb)
+			swap_ip(ip, skb);
 			//swap ports
 
 			// update response
 			// long bpf_skb_change_tail(struct sk_buff *skb, u32 len, u64 flags)
-			bpf_skb_store_bytes(skb, payload_offset, response->buf, sizeof(response->buf), BPF_F_RECOMPUTE_CSUM);
+			bpf_skb_store_bytes(skb, payload_offset, buf, sizeof(buf), BPF_F_RECOMPUTE_CSUM);
 			bpf_redirect(skb->ifindex, 0); 
 			// vs bpf_clone_redirect(skb, skb->ifindex, 0)
 		}

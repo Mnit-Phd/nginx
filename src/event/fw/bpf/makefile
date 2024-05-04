@@ -11,12 +11,14 @@ all: $(RESULT)
 $(RESULT): $(PROGNAME).o
 	LICENSE=$(LICENSE) PROGNAME=$(PROGNAME) bash ./bpfgen.sh $< > $@
 
+
+
 DEFS=-DPROGNAME=\"$(PROGNAME)\"                                               \
      -DLICENSE_$(LICENSE)                                                     \
      -DLICENSE=\"$(LICENSE)\"                                                 \
 
 $(PROGNAME).o: $(PROGNAME).c
-	clang $(CFLAGS) $(DEFS) -target bpf -c $< -o $@
+	clang $(CFLAGS) $(DEFS) -target bpf -c -g $< -o $@
 
 install: $(RESULT)
 	cp $(RESULT) $(DEST)
